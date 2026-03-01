@@ -83,8 +83,8 @@ def extract_unique_frames(input_path, output_dir, threshold=10.0) -> None:
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser(description="Extract unique frames from a video based on a threshold.")
-    argparser.add_argument("input_path", help="Path to the input video file or directory of frames. Frames inside the directory are required to be ordered starting from 0. E.g 000.jpg, 001.jpg, 002.jpg, ...")
-    argparser.add_argument("--output_dir", default=None, help="Path to the output directory where a folder of unique frames will be saved. If no path is provided, it will be saved in the current directory.")
+    argparser.add_argument("input_path", help="Path to the input video file or directory of frames. A set of ordered frames starting from 0 can also be provided instead of a video file. E.g 0.jpg, 1.jpg, 2.jpg, ...")
+    argparser.add_argument("--output_dir", default=None, help="Path to the output directory where a folders of unique frames will be saved. If no folder is provided, it will be saved in the current directory.")
     argparser.add_argument("--threshold", type=float, default=10.0, help="Threshold for frame difference (default: 10.0)")
     
     if not argparser.parse_args().output_dir:
