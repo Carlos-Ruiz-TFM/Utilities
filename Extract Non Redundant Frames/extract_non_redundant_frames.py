@@ -3,7 +3,7 @@ import argparse
 import cv2
 import numpy as np
 import os
-import tqdm
+from tqdm import tqdm
 
 def extract_unique_frames(input_path, output_dir, threshold=10.0) -> None:
     """Method to extract unique frames from a video or a directory of frames based on a specified threshold.
@@ -36,7 +36,7 @@ def extract_unique_frames(input_path, output_dir, threshold=10.0) -> None:
         
         saved_count = 1
         
-        for frame_file in tqdm.tqdm(frame_files[1:], desc="Processing frames"):
+        for frame_file in tqdm(frame_files[1:], desc="Processing frames"):
             frame = cv2.imread(os.path.join(input_path, frame_file))
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             diff = cv2.absdiff(prev_gray, gray)
@@ -53,6 +53,8 @@ def extract_unique_frames(input_path, output_dir, threshold=10.0) -> None:
             print("Error opening video file.")
             return
         
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
         ret, prev_frame = cap.read()
         if not ret:
             print("Error reading the first frame.")
@@ -63,20 +65,24 @@ def extract_unique_frames(input_path, output_dir, threshold=10.0) -> None:
         
         saved_count = 1
         
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            diff = cv2.absdiff(prev_gray, gray)
-            mean_diff = np.mean(diff)
-            
-            if mean_diff > threshold:
-                filename = f"frame_{saved_count:04d}.jpg"
-                cv2.imwrite(os.path.join(output_dir, filename), frame)
-                prev_gray = gray
-                saved_count += 1
+        with tqdm(total=total_frames, desc="Processing video") as pbar:
+            pbar.update(1)
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                diff = cv2.absdiff(prev_gray, gray)
+                mean_diff = np.mean(diff)
+                
+                if mean_diff > threshold:
+                    filename = f"frame_{saved_count:04d}.jpg"
+                    cv2.imwrite(os.path.join(output_dir, filename), frame)
+                    prev_gray = gray
+                    saved_count += 1
+                    
+                pbar.update(1)
         
         cap.release()
     print(f"Extracted {saved_count} unique frames to {output_dir}.")
