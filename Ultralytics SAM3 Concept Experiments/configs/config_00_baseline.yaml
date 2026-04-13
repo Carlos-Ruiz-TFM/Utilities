@@ -1,0 +1,12 @@
+concepts:
+  pedestrian: pedestrian
+  bicycle: bicycle
+  car: car
+  motorcycle: motorcycle
+  bus: bus
+  truck: truck
+  traffic light: traffic light
+  traffic sign: traffic signs
+  rider: rider
+  electric scooter: electric scooter
+  crosswalk: crosswalk
