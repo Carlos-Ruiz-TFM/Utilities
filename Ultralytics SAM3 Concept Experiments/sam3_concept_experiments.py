@@ -22,6 +22,16 @@ DEFAULT_RUNS_DIR = SCRIPT_DIR / "runs"
 EXECUTION_MARKER = ".completed"
 TARGET_CLASS_NAMES = {v: k for k, v in CORRESPONDENCE.items()}
 
+# Official Ultralytics color palette (RGB converted to BGR for OpenCV)
+ULTRALYTICS_COLORS = [
+    (255, 56, 56), (255, 157, 151), (255, 112, 31), (255, 178, 29),
+    (207, 210, 49), (72, 249, 10), (146, 204, 23), (61, 219, 134),
+    (26, 147, 52), (0, 212, 187), (44, 153, 168), (0, 194, 255),
+    (52, 69, 147), (100, 115, 255), (0, 24, 236), (132, 56, 255),
+    (82, 0, 133), (203, 56, 255), (255, 149, 200), (255, 55, 199)
+]
+YOLO_COLORS_BGR = [(b, g, r) for r, g, b in ULTRALYTICS_COLORS]
+
 class SAM3_Dataset_Predictor:
     def __init__(self, concept_mapping):
         self.predictor = None
@@ -66,19 +76,21 @@ class SAM3_Dataset_Predictor:
             yaml.dump(yaml_data, f, sort_keys=False)
 
     def _class_color(self, class_id):
-        return (
-            int(70 + (class_id * 53) % 170),
-            int(90 + (class_id * 97) % 140),
-            int(110 + (class_id * 29) % 120),
-        )
+        # Loops over the palette if you have more classes than colors
+        return YOLO_COLORS_BGR[class_id % len(YOLO_COLORS_BGR)]
 
     def _save_visualization(self, img_path, class_indices, polygons, vis_path):
         image = cv2.imread(img_path)
         if image is None:
             return
 
-        overlay = image.copy()
-        alpha = 0.35
+        overlay = np.zeros_like(image, dtype=np.uint8)
+        alpha = 0.5  # Ultralytics default mask transparency
+
+        # Dynamic scaling based on image size (mimicking Ultralytics Annotator)
+        lw = max(round(sum(image.shape) / 2 * 0.003), 2)  # Line width
+        tf = max(lw - 1, 1)  # Font thickness
+        fs = lw / 3  # Font scale
 
         for c_idx, poly in zip(class_indices, polygons):
             if len(poly) == 0:
@@ -88,7 +100,9 @@ class SAM3_Dataset_Predictor:
             target_class = self.concept_mapping[concept]
             final_id = CORRESPONDENCE[target_class]
             label = TARGET_CLASS_NAMES[final_id]
+            color = self._class_color(final_id)
 
+            # Convert normalized coordinates to absolute
             pts = np.array(
                 [[int(pt[0] * image.shape[1]), int(pt[1] * image.shape[0])] for pt in poly],
                 dtype=np.int32,
@@ -96,34 +110,37 @@ class SAM3_Dataset_Predictor:
             if len(pts) == 0:
                 continue
 
-            color = self._class_color(final_id)
+            # Draw mask on overlay
             cv2.fillPoly(overlay, [pts], color)
-            cv2.polylines(image, [pts], isClosed=True, color=color, thickness=2)
 
+            # Draw Bounding Box
             x, y, w, h = cv2.boundingRect(pts)
-            text = label
-            (text_w, text_h), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-            text_y = max(y - 8, text_h + 8)
-            cv2.rectangle(
-                image,
-                (x, text_y - text_h - baseline - 6),
-                (x + text_w + 8, text_y + baseline),
-                color,
-                thickness=-1,
-            )
+            p1, p2 = (x, y), (x + w, y + h)
+            cv2.rectangle(image, p1, p2, color, thickness=lw, lineType=cv2.LINE_AA)
+
+            # Draw Label Background
+            w, h = cv2.getTextSize(label, 0, fontScale=fs, thickness=tf)[0]
+            outside = p1[1] - h >= 3
+            p2_bg = p1[0] + w, p1[1] - h - 3 if outside else p1[1] + h + 3
+            cv2.rectangle(image, p1, p2_bg, color, -1, cv2.LINE_AA)
+
+            # Draw Label Text
             cv2.putText(
                 image,
-                text,
-                (x + 4, text_y - 4),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (255, 255, 255),
-                2,
-                cv2.LINE_AA,
+                label,
+                (p1[0], p1[1] - 2 if outside else p1[1] + h + 2),
+                0,
+                fs,
+                (255, 255, 255),  # White text
+                thickness=tf,
+                lineType=cv2.LINE_AA,
             )
 
-        blended = cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
-        cv2.imwrite(vis_path, blended)
+        # Blend the mask overlay efficiently
+        mask = overlay.astype(bool)
+        image[mask] = cv2.addWeighted(image, 1 - alpha, overlay, alpha, 0)[mask]
+
+        cv2.imwrite(vis_path, image)
 
     def predict_dataset(self, raw_dataset_path, output_dataset_path):
         if self.predictor is None:
@@ -184,18 +201,15 @@ class SAM3_Dataset_Predictor:
         self.write_queue.put(None)
         self.writer_thread.join()
 
-
 def load_concepts(config_path):
     with open(config_path, "r") as f:
         config_data = yaml.safe_load(f) or {}
     return config_data.get("concepts", {})
 
-
 def iter_config_files(configs_dir):
     for config_path in sorted(Path(configs_dir).glob("*.y*ml")):
         if config_path.is_file():
             yield config_path
-
 
 def run_experiment(raw_path, config_path, runs_dir, model_path):
     exp_name = config_path.stem
