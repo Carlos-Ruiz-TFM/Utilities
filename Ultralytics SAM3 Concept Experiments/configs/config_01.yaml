@@ -1,0 +1,32 @@
+concepts:
+  # --- PERSONAS ---
+  "person walking on the street": pedestrian
+  "person standing on the sidewalk": pedestrian
+  
+  # --- RIDER (El más problemático si no se especifica) ---
+  "person riding a bicycle": rider
+  "person riding a scooter": rider
+  "motorcyclist wearing a helmet": rider
+
+  # --- VEHÍCULOS LIGEROS ---
+  "passenger car": car
+  "suv": car
+  "taxi": car
+  "motorcycle": motorcycle
+  "bicycle": bicycle
+  "stand-up electric scooter": electric scooter
+
+  # --- VEHÍCULOS PESADOS ---
+  "city bus": bus
+  "coach bus": bus
+  "delivery van": truck
+  "heavy duty truck": truck
+  "semi-trailer truck": truck
+
+  # --- INFRAESTRUCTURA ---
+  "illuminated traffic light": traffic light
+  "road traffic sign": traffic signs
+  "speed limit sign": traffic signs
+  
+  # --- CROSSWALK (Área completa) ---
+  "pedestrian crossing zone": crosswalk
