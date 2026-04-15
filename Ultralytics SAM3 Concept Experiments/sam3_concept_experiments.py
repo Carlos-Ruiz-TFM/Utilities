@@ -1,5 +1,4 @@
 import os
-import shutil
 import threading
 import yaml
 from queue import Queue
@@ -10,19 +9,11 @@ from tqdm import tqdm
 from argparse import ArgumentParser
 from ultralytics.models.sam import SAM3SemanticPredictor
 
-CORRESPONDENCE = {
-    "pedestrian": 0, "bicycle": 1, "car": 2, "motorcycle": 3,
-    "bus": 4, "truck": 5, "traffic light": 6, "traffic signs": 7,
-    "rider": 8, "electric scooter": 9, "crosswalk": 10,
-}
-
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIGS_DIR = SCRIPT_DIR / "configs"
 DEFAULT_RUNS_DIR = SCRIPT_DIR / "runs"
 EXECUTION_MARKER = ".completed"
-TARGET_CLASS_NAMES = {v: k for k, v in CORRESPONDENCE.items()}
 
-# Official Ultralytics color palette (RGB converted to BGR for OpenCV)
 ULTRALYTICS_COLORS = [
     (255, 56, 56), (255, 157, 151), (255, 112, 31), (255, 178, 29),
     (207, 210, 49), (72, 249, 10), (146, 204, 23), (61, 219, 134),
@@ -33,10 +24,18 @@ ULTRALYTICS_COLORS = [
 YOLO_COLORS_BGR = [(b, g, r) for r, g, b in ULTRALYTICS_COLORS]
 
 class SAM3_Dataset_Predictor:
-    def __init__(self, concept_mapping):
+    def __init__(self, concept_mapping, overlap_threshold=0.6):
         self.predictor = None
         self.concept_mapping = concept_mapping
         self.prompts = list(concept_mapping.keys())
+        
+        self.target_classes = []
+        for target in concept_mapping.values():
+            if target not in self.target_classes:
+                self.target_classes.append(target)
+        self.correspondence = {cls: idx for idx, cls in enumerate(self.target_classes)}
+        
+        self.overlap_threshold = overlap_threshold
         self.write_queue = Queue()
         self.writer_thread = threading.Thread(target=self._writer_worker, daemon=True)
         self.writer_thread.start()
@@ -69,14 +68,13 @@ class SAM3_Dataset_Predictor:
         yaml_data = {
             "train": "images/train",
             "val": "images/train",
-            "nc": len(CORRESPONDENCE),
-            "names": {v: k for k, v in CORRESPONDENCE.items()}
+            "nc": len(self.correspondence),
+            "names": {v: k for k, v in self.correspondence.items()}
         }
         with open(yaml_path, "w") as f:
             yaml.dump(yaml_data, f, sort_keys=False)
 
     def _class_color(self, class_id):
-        # Loops over the palette if you have more classes than colors
         return YOLO_COLORS_BGR[class_id % len(YOLO_COLORS_BGR)]
 
     def _save_visualization(self, img_path, class_indices, polygons, vis_path):
@@ -85,12 +83,11 @@ class SAM3_Dataset_Predictor:
             return
 
         overlay = np.zeros_like(image, dtype=np.uint8)
-        alpha = 0.5  # Ultralytics default mask transparency
+        alpha = 0.5 
 
-        # Dynamic scaling based on image size (mimicking Ultralytics Annotator)
-        lw = max(round(sum(image.shape) / 2 * 0.003), 2)  # Line width
-        tf = max(lw - 1, 1)  # Font thickness
-        fs = lw / 3  # Font scale
+        lw = max(round(sum(image.shape) / 2 * 0.003), 2)
+        tf = max(lw - 1, 1)
+        fs = lw / 3
 
         for c_idx, poly in zip(class_indices, polygons):
             if len(poly) == 0:
@@ -98,11 +95,10 @@ class SAM3_Dataset_Predictor:
 
             concept = self.prompts[int(c_idx)]
             target_class = self.concept_mapping[concept]
-            final_id = CORRESPONDENCE[target_class]
-            label = TARGET_CLASS_NAMES[final_id]
+            final_id = self.correspondence[target_class]
+            label = self.target_classes[final_id]
             color = self._class_color(final_id)
 
-            # Convert normalized coordinates to absolute
             pts = np.array(
                 [[int(pt[0] * image.shape[1]), int(pt[1] * image.shape[0])] for pt in poly],
                 dtype=np.int32,
@@ -110,37 +106,69 @@ class SAM3_Dataset_Predictor:
             if len(pts) == 0:
                 continue
 
-            # Draw mask on overlay
             cv2.fillPoly(overlay, [pts], color)
 
-            # Draw Bounding Box
             x, y, w, h = cv2.boundingRect(pts)
             p1, p2 = (x, y), (x + w, y + h)
             cv2.rectangle(image, p1, p2, color, thickness=lw, lineType=cv2.LINE_AA)
 
-            # Draw Label Background
             w, h = cv2.getTextSize(label, 0, fontScale=fs, thickness=tf)[0]
             outside = p1[1] - h >= 3
             p2_bg = p1[0] + w, p1[1] - h - 3 if outside else p1[1] + h + 3
             cv2.rectangle(image, p1, p2_bg, color, -1, cv2.LINE_AA)
 
-            # Draw Label Text
             cv2.putText(
                 image,
                 label,
                 (p1[0], p1[1] - 2 if outside else p1[1] + h + 2),
                 0,
                 fs,
-                (255, 255, 255),  # White text
+                (255, 255, 255), 
                 thickness=tf,
                 lineType=cv2.LINE_AA,
             )
 
-        # Blend the mask overlay efficiently
         mask = overlay.astype(bool)
         image[mask] = cv2.addWeighted(image, 1 - alpha, overlay, alpha, 0)[mask]
 
         cv2.imwrite(vis_path, image)
+
+    def _calculate_overlap_ratio(self, mask1, mask2):
+        intersection = np.logical_and(mask1, mask2).sum()
+        union = np.logical_or(mask1, mask2).sum()
+        if union == 0: return 0
+        return intersection / union
+        
+    def _resolve_overlaps(self, class_indices, masks_data):
+        num_masks = len(class_indices)
+        if num_masks == 0: 
+            return []
+
+        # Ascending order: lowest index (0) has the highest priority
+        sorted_detection_indices = np.argsort(class_indices)
+        
+        keep_indices = []
+        
+        for i in sorted_detection_indices:
+            mask_i = masks_data[i]
+            discard = False
+            
+            for j in keep_indices:
+                mask_j = masks_data[j]
+                overlap_ratio = self._calculate_overlap_ratio(mask_i, mask_j)
+                
+                if overlap_ratio > self.overlap_threshold:
+                    name_i = self.concept_mapping[self.prompts[class_indices[i]]]
+                    name_j = self.concept_mapping[self.prompts[class_indices[j]]]
+                    
+                    print(f"Discarding mask {i} (class '{name_i}') due to overlap with mask {j} (class '{name_j}'), overlap ratio: {overlap_ratio:.2f}")                    
+                    discard = True
+                    break
+                    
+            if not discard:
+                keep_indices.append(i)
+                
+        return keep_indices
 
     def predict_dataset(self, raw_dataset_path, output_dataset_path):
         if self.predictor is None:
@@ -174,21 +202,28 @@ class SAM3_Dataset_Predictor:
                 continue
                 
             result = results[0]
-            vis_path = os.path.join(vis_dir, img_name)
-
-            class_indices = result.boxes.cls.cpu().tolist()
+            
+            class_indices = result.boxes.cls.cpu().numpy().astype(int)
+            masks_data = result.masks.data.cpu().numpy()
             polygons = result.masks.xyn
-            self._save_visualization(img_path, class_indices, polygons, vis_path)
+            
+            keep_indices = self._resolve_overlaps(class_indices, masks_data)
+            
+            filtered_indices = [class_indices[idx] for idx in keep_indices]
+            filtered_polygons = [polygons[idx] for idx in keep_indices]
+
+            vis_path = os.path.join(vis_dir, img_name)
+            self._save_visualization(img_path, filtered_indices, filtered_polygons, vis_path)
 
             output_path = os.path.join(labels_dir, os.path.splitext(img_name)[0] + ".txt")
             lines = []
 
-            for c_idx, poly in zip(class_indices, polygons):
+            for c_idx, poly in zip(filtered_indices, filtered_polygons):
                 if len(poly) == 0: continue
                 
                 concept = self.prompts[int(c_idx)]
                 target_class = self.concept_mapping[concept]
-                final_id = CORRESPONDENCE[target_class]
+                final_id = self.correspondence[target_class]
                 
                 poly_str = " ".join([f"{pt[0]:.6f} {pt[1]:.6f}" for pt in poly])
                 lines.append(f"{final_id} {poly_str}\n")
@@ -211,7 +246,7 @@ def iter_config_files(configs_dir):
         if config_path.is_file():
             yield config_path
 
-def run_experiment(raw_path, config_path, runs_dir, model_path):
+def run_experiment(raw_path, config_path, runs_dir, model_path, overlap_threshold):
     exp_name = config_path.stem
     output_path = Path(runs_dir) / exp_name
     marker_path = output_path / EXECUTION_MARKER
@@ -225,7 +260,7 @@ def run_experiment(raw_path, config_path, runs_dir, model_path):
         print(f"Skipping {exp_name}: no concepts found in {config_path}.")
         return
 
-    predictor = SAM3_Dataset_Predictor(concept_mapping)
+    predictor = SAM3_Dataset_Predictor(concept_mapping, overlap_threshold)
     predictor.load_predictor(model_path)
 
     try:
@@ -240,6 +275,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("raw_path", help="Path to the raw image folder.")
     parser.add_argument("--model", default="sam3.pt")
+    parser.add_argument("--overlap_threshold", type=float, default=0.6, help="IoU threshold to resolve overlaps between related classes.")
     parser.add_argument("--configs_dir", default=str(DEFAULT_CONFIGS_DIR), help="Directory containing experiment configs.")
     parser.add_argument("--runs_dir", default=str(DEFAULT_RUNS_DIR), help="Directory where experiment outputs are stored.")
     args = parser.parse_args()
@@ -249,4 +285,4 @@ if __name__ == "__main__":
     runs_dir.mkdir(parents=True, exist_ok=True)
 
     for config_path in iter_config_files(configs_dir):
-        run_experiment(args.raw_path, config_path, runs_dir, args.model)
+        run_experiment(args.raw_path, config_path, runs_dir, args.model, args.overlap_threshold)
