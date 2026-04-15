@@ -6,7 +6,7 @@ concepts:
   car: car
   bus: bus
   truck: truck
-  traffic light: vehicle traffic light #aunque no se vea la luz
+  traffic light: traffic light #aunque no se vea la luz, distinguir entre vehículos y peatones
   traffic sign: visible traffic signs #se debe ver el cartel por delante
   rider: rider
   crosswalk: crosswalk

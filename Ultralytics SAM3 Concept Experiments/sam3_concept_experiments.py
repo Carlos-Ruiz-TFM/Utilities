@@ -57,6 +57,7 @@ class SAM3_Dataset_Predictor:
             task="segment",
             mode="predict",
             model=model_path,
+            imgsz=910,
             half=True,
             save=False,
             verbose=False,
@@ -145,7 +146,7 @@ class SAM3_Dataset_Predictor:
             return []
 
         # Ascending order: lowest index (0) has the highest priority
-        sorted_detection_indices = np.argsort(class_indices)
+        sorted_detection_indices = np.argsort(-class_indices)
         
         keep_indices = []
         
@@ -275,7 +276,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("raw_path", help="Path to the raw image folder.")
     parser.add_argument("--model", default="sam3.pt")
-    parser.add_argument("--overlap_threshold", type=float, default=0.6, help="IoU threshold to resolve overlaps between related classes.")
+    parser.add_argument("--overlap_threshold", type=float, default=0.7, help="IoU threshold to resolve overlaps between related classes.")
     parser.add_argument("--configs_dir", default=str(DEFAULT_CONFIGS_DIR), help="Directory containing experiment configs.")
     parser.add_argument("--runs_dir", default=str(DEFAULT_RUNS_DIR), help="Directory where experiment outputs are stored.")
     args = parser.parse_args()
