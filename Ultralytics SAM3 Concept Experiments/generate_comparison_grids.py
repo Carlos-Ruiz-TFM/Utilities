@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_RUNS_DIR = SCRIPT_DIR / "runs"
+VALID_IMAGE_EXTS = (".png", ".jpg", ".jpeg")
 
 
 def resolve_experiment_dir(exp, runs_dir):
@@ -18,12 +19,14 @@ def resolve_experiment_dir(exp, runs_dir):
 
 def create_comparison_grid(raw_dir, exp_dirs, output_dir):
     os.makedirs(output_dir, exist_ok=True)
-    valid_ext = (".png", ".jpg", ".jpeg")
-    images = [f for f in os.listdir(raw_dir) if f.lower().endswith(valid_ext)]
+    raw_root = Path(raw_dir)
+    images = [
+        path for path in sorted(raw_root.rglob("*"))
+        if path.is_file() and path.suffix.lower() in VALID_IMAGE_EXTS
+    ]
 
-    for img_name in tqdm(images, desc="Generating comparisons"):
-        raw_path = os.path.join(raw_dir, img_name)
-        orig_img = cv2.imread(raw_path)
+    for img_path in tqdm(images, desc="Generating comparisons"):
+        orig_img = cv2.imread(str(img_path))
         
         if orig_img is None:
             continue
@@ -33,11 +36,12 @@ def create_comparison_grid(raw_dir, exp_dirs, output_dir):
         h, w = orig_img.shape[:2]
 
         for exp in exp_dirs:
-            exp_vis_path = os.path.join(exp, "visualizations", img_name)
+            rel_path = img_path.relative_to(raw_root)
+            exp_vis_path = Path(exp) / "visualizations" / rel_path
             labels.append(os.path.basename(exp))
             
-            if os.path.exists(exp_vis_path):
-                exp_img = cv2.imread(exp_vis_path)
+            if exp_vis_path.exists():
+                exp_img = cv2.imread(str(exp_vis_path))
                 exp_img = cv2.resize(exp_img, (w, h))
                 img_list.append(exp_img)
             else:
@@ -52,9 +56,10 @@ def create_comparison_grid(raw_dir, exp_dirs, output_dir):
             labeled_imgs.append(padded)
 
         grid = cv2.hconcat(labeled_imgs)
-        
-        out_path = os.path.join(output_dir, img_name)
-        cv2.imwrite(out_path, grid)
+
+        out_path = Path(output_dir) / img_path.relative_to(raw_root)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(out_path), grid)
 
 if __name__ == "__main__":
     parser = ArgumentParser()

@@ -1,0 +1,11 @@
+concepts:
+  person: person
+  bicycle: bicycle
+  motorcycle: motorcycle
+  car: car
+  bus: bus
+  truck: truck
+  traffic light: traffic light
+
+dataset:
+  path: /home/ruiz/Repositories/Utilities/Ultralytics SAM3 Concept Experiments/datasets/coco/val2017

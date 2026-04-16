@@ -32,9 +32,11 @@ Thumbs.db
 
 # Generated outputs from utilities
 **/runs/
+**/datasets/
 **/yolo_dataset/
 **/comparisons/
 **/visualizations/
+**/confidences/
 **/.completed
 
 # Keep config files tracked

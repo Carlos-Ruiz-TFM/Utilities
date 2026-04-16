@@ -1,0 +1,14 @@
+concepts:
+  person: person
+  rider: rider
+  car: car
+  bus: bus
+  truck: truck
+  motorcycle: motorcycle
+  bicycle: bicycle
+  traffic light: traffic light
+  traffic sign: traffic sign
+
+
+dataset:
+  path: /home/ruiz/Repositories/Utilities/Ultralytics SAM3 Concept Experiments/datasets/cityscapes/leftImg8bit/val
