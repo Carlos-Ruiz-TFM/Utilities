@@ -1,0 +1,16 @@
+concepts:
+  pedestrian: pedestrian
+  motorcycle: motorcycle
+  bicycle: bicycle
+  electric scooter: stand-up scooter
+  car: car
+  bus: bus
+  truck: truck
+  traffic light: traffic light #aunque no se vea la luz, distinguir entre vehículos y peatones
+  traffic sign: visible traffic signs #se debe ver el cartel por delante
+  speed sign: speed limit sign #se debe ver el cartel por delante 
+  rider: rider
+  crosswalk: crosswalk
+
+dataset:
+  path: /home/ruiz/Repositories/Utilities/Ultralytics SAM3 Concept Experiments/datasets/m_madrid/downloads

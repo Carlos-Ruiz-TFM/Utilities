@@ -13,4 +13,4 @@ concepts:
   crosswalk: crosswalk
 
 dataset:
-  path: /home/ruiz/Datasets/TFM/valencia/RAW/downloads/
+  path: /home/ruiz/Repositories/Utilities/Ultralytics SAM3 Concept Experiments/datasets/m_barcelona/downloads
